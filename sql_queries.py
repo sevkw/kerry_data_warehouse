@@ -33,7 +33,7 @@ staging_events_table_create= ("""
         method VARCHAR(5) NOT NULL,
         page VARCHAR(10) NOT NULL,
         registration NUMERIC(20, 10) NOT NULL,
-        sessionid INTEGER NOT NULL,
+        sessionId INTEGER NOT NULL,
         song VARCHAR(128) NOT NULL,
         status INTEGER NOT NULL,
         ts BIGINT NOT NULL,
@@ -46,7 +46,7 @@ staging_songs_table_create = ("""
     CREATE TABLE staging_songs (
         num_songs INTEGER NOT NULL,
         artist_id BIGINT NOT NULL,
-        artist_lattitude DOUBLE PRECISION,
+        artist_latitude DOUBLE PRECISION,
         artist_longitude DOUBLE PRECISION,
         artist_name VARCHAR(50) NOT NULL,
         song_id VARCHAR(50) NOT NULL,
@@ -93,9 +93,9 @@ song_table_create = ("""
 artist_table_create = ("""
     CREATE TABLE dim_artists (
         artist_id BIGINT NOT NULL PRIMARY KEY,
-        name VARCHAR(128) NOT NULL,
-        location VARCHAR(50) NOT NULL,
-        artist_lattitude DOUBLE PRECISION,
+        artist_name VARCHAR(128) NOT NULL,
+        artist_location VARCHAR(50) NOT NULL,
+        artist_latitude DOUBLE PRECISION,
         artist_longitude DOUBLE PRECISION
     )
 """)
@@ -134,18 +134,68 @@ staging_songs_copy = ("""
 # FINAL TABLES
 
 songplay_table_insert = ("""
+    INSERT INTO fct_songplays (songplay_id, start_time, user_id, level, song_id, artist_id, session_id, location, user_agent)
+    SELECT
+        MD5(CONCAT(CAST(se.userId AS VARCHAR), CAST(se.sessionId AS VARCHAR), CAST(se.ts AS VARCHAR))) AS songplay_id
+        , TO_TIMESTAMP(se.ts / 1000) AT TIME ZONE 'UTC' AS start_time
+        , se.userId AS user_id
+        , se.level
+        , ss.song_id
+        , ss.artist_id
+        , se.sessionId AS session_id
+        , se.location
+        , se.userAgent AS user_agent
+    FROM staging_events AS se
+    LEFT JOIN staging_songs AS ss
+        ON se.artist = ss.artist_name
+        AND se.song = ss.title
+    WHERE page = 'NextSong'
 """)
 
 user_table_insert = ("""
+    INSERT INTO dim_users (user_id, first_name, last_name, gender, level)
+    SELECT
+        DISTINCT userID AS user_id
+        , firstName AS first_name
+        , lastName AS last_name
+        , gender
+        , level
+    FROM staging_events
 """)
 
 song_table_insert = ("""
+    INSERT INTO dim_songs (song_id, title, artist_id, year, duration)
+    SELECT
+        DISTINCT song_id AS song_id
+        , title
+        , artist_id
+        , year
+        , duration
+    FROM staging_songs
 """)
 
 artist_table_insert = ("""
+    INSERT INTO dim_artists (artist_id, artist_name, artist_location, artist_latitude, artist_longitude)
+    SELECT
+        DISTINCT artist_id AS artist_id
+        , artist_name
+        , artist_location
+        , artist_latitude
+        , artist_longitude
+    FROM staging_songs
 """)
 
 time_table_insert = ("""
+    INSERT INTO dim_time (start_time, hour, day, week, month, year, weekday)
+    SELECT 
+        DISTINCT TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC' AS start_time
+        , EXTRACT(HOUR FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS hour
+        , EXTRACT(DAY FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS day
+        , EXTRACT(WEEK FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS week
+        , EXTRACT(MONTH FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS month
+        , EXTRACT(YEAR FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS year
+        , EXTRACT(DOW FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS weekday   
+    FROM staging_events
 """)
 
 # QUERY LISTS
