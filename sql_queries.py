@@ -4,7 +4,7 @@ import configparser
 # CONFIG
 config = configparser.ConfigParser()
 config.read('dwh.cfg')
-region = 'us-west-2'
+region = config.get("S3", "REGION")
 aws_arn = config.get("IAM_ROLE", "ARN")
 log_data = config.get("S3", "LOG_DATA")
 log_jsonpath = config.get("S3", "LOG_JSONPATH")
@@ -24,94 +24,95 @@ time_table_drop = "DROP TABLE IF EXISTS dim_time;"
 
 staging_events_table_create= ("""
     CREATE TABLE staging_events (
-        artist VARCHAR(128) NOT NULL,
-        auth VARCHAR(10) NOT NULL,
-        firstName VARCHAR(25) NOT NULL,
-        gender VARCHAR(5) NOT NULL,
-        itemInSession INTEGER NOT NULL,
-        lastName VARCHAR(25) NOT NULL,
+        artist VARCHAR,
+        auth VARCHAR,
+        firstName VARCHAR,
+        gender VARCHAR,
+        itemInSession INTEGER,
+        lastName VARCHAR,
         length NUMERIC(10, 5),
-        level VARCHAR(10) NOT NULL,
-        location VARCHAR(50) NOT NULL,
-        method VARCHAR(5) NOT NULL,
-        page VARCHAR(10) NOT NULL,
-        registration NUMERIC(20, 10) NOT NULL,
-        sessionId INTEGER NOT NULL,
-        song VARCHAR(128) NOT NULL,
-        status INTEGER NOT NULL,
-        ts BIGINT NOT NULL,
-        userAgent VARCHAR(256) NOT NULL,
-        userId INTEGER NOT NULL
+        level VARCHAR,
+        location VARCHAR,
+        method VARCHAR,
+        page VARCHAR,
+        registration BIGINT,
+        sessionId INTEGER,
+        song VARCHAR,
+        status INTEGER,
+        ts BIGINT,
+        userAgent VARCHAR,
+        userId INTEGER
     )
 """)
 
 staging_songs_table_create = ("""
     CREATE TABLE staging_songs (
-        num_songs INTEGER NOT NULL,
-        artist_id BIGINT NOT NULL,
-        artist_latitude DOUBLE PRECISION,
-        artist_longitude DOUBLE PRECISION,
-        artist_name VARCHAR(50) NOT NULL,
-        song_id VARCHAR(50) NOT NULL,
-        title VARCHAR(100) NOT NULL,
-        duration NUMERIC(10, 5) NOT NULL,
-        year SMALLINT NOT NULL
+        num_songs INTEGER,
+        artist_id VARCHAR,
+        artist_location VARCHAR,
+        artist_latitude VARCHAR,
+        artist_longitude VARCHAR,
+        artist_name VARCHAR,
+        song_id VARCHAR,
+        title VARCHAR,
+        duration NUMERIC,
+        year SMALLINT
     )
 """)
 
 songplay_table_create = ("""
     CREATE TABLE fct_songplays (
-        songplay_id INTEGER NOT NULL PRIMARY KEY,
-        start_time TIMESTAMP NOT NULL,
-        user_id INTEGER NOT NULL,
-        level VARCHAR(10) NOT NULL,
-        song_id VARCHAR(50) NOT NULL,
-        artist_id BIGINT NOT NULL,
-        session_id INTEGER NOT NULL,
-        location VARCHAR(50) NOT NULL,
-        user_agent VARCHAR(256) NOT NULL
+        songplay_id VARCHAR PRIMARY KEY,
+        start_time TIMESTAMP,
+        user_id INTEGER,
+        level VARCHAR,
+        song_id VARCHAR,
+        artist_id VARCHAR,
+        session_id INTEGER,
+        location VARCHAR,
+        user_agent VARCHAR
     )
 """)
 
 user_table_create = ("""
     CREATE TABLE dim_users (
-        user_id INTEGER NOT NULL PRIMARY KEY,
-        first_name VARCHAR(25) NOT NULL,
-        last_name VARCHAR(25) NOT NULL,
-        gender VARCHAR(5) NOT NULL,
-        level VARCHAR(10) NOT NULL
+        user_id INTEGER PRIMARY KEY,
+        first_name VARCHAR,
+        last_name VARCHAR,
+        gender VARCHAR,
+        level VARCHAR
     )
 """)
 
 song_table_create = ("""
     CREATE TABLE dim_songs (
-        song_id VARCHAR(50) NOT NULL PRIMARY KEY,
-        title VARCHAR(128) NOT NULL,
-        artist_id BIGINT NOT NULL,
-        year INTEGER NOT NULL,
-        duration NUMERIC(10, 5) NOT NULL
+        song_id VARCHAR PRIMARY KEY,
+        title VARCHAR,
+        artist_id VARCHAR,
+        year INTEGER,
+        duration NUMERIC
     )
 """)
 
 artist_table_create = ("""
     CREATE TABLE dim_artists (
-        artist_id BIGINT NOT NULL PRIMARY KEY,
-        artist_name VARCHAR(128) NOT NULL,
-        artist_location VARCHAR(50) NOT NULL,
-        artist_latitude DOUBLE PRECISION,
-        artist_longitude DOUBLE PRECISION
+        artist_id VARCHAR PRIMARY KEY,
+        artist_name VARCHAR,
+        artist_location VARCHAR,
+        artist_latitude VARCHAR,
+        artist_longitude VARCHAR
     )
 """)
 
 time_table_create = ("""
     CREATE TABLE dim_time (
-        start_time TIMESTAMP NOT NULL,
-        hour SMALLINT NOT NULL,
-        day SMALLINT NOT NULL,
-        week SMALLINT NOT NULL,
-        month SMALLINT NOT NULL,
-        year SMALLINT NOT NULL,
-        weekday SMALLINT NOT NULL
+        start_time TIMESTAMP,
+        hour SMALLINT,
+        day SMALLINT,
+        week SMALLINT,
+        month SMALLINT,
+        year SMALLINT,
+        weekday SMALLINT
     )
 """)
 
@@ -139,8 +140,8 @@ staging_songs_copy = ("""
 songplay_table_insert = ("""
     INSERT INTO fct_songplays (songplay_id, start_time, user_id, level, song_id, artist_id, session_id, location, user_agent)
     SELECT
-        MD5(CONCAT(CAST(se.userId AS VARCHAR), CAST(se.sessionId AS VARCHAR), CAST(se.ts AS VARCHAR))) AS songplay_id
-        , TO_TIMESTAMP(se.ts / 1000) AT TIME ZONE 'UTC' AS start_time
+        MD5(se.userId::VARCHAR||se.sessionId::VARCHAR||se.ts::VARCHAR) AS songplay_id
+        , TIMESTAMP 'epoch' + (se.ts/1000 * INTERVAL '1 second') AS start_time
         , se.userId AS user_id
         , se.level
         , ss.song_id
@@ -164,6 +165,7 @@ user_table_insert = ("""
         , gender
         , level
     FROM staging_events
+    WHERE userID IS NOT NULL
 """)
 
 song_table_insert = ("""
@@ -190,15 +192,20 @@ artist_table_insert = ("""
 
 time_table_insert = ("""
     INSERT INTO dim_time (start_time, hour, day, week, month, year, weekday)
+    WITH timestamp_convert AS (
+        SELECT
+        DISTINCT TIMESTAMP 'epoch' + ts::INT8/1000 * INTERVAL '1 second' AS start_time
+        FROM staging_events
+    )
     SELECT 
-        DISTINCT TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC' AS start_time
-        , EXTRACT(HOUR FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS hour
-        , EXTRACT(DAY FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS day
-        , EXTRACT(WEEK FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS week
-        , EXTRACT(MONTH FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS month
-        , EXTRACT(YEAR FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS year
-        , EXTRACT(DOW FROM TO_TIMESTAMP(ts / 1000) AT TIME ZONE 'UTC') AS weekday   
-    FROM staging_events
+        start_time
+        , EXTRACT(HOUR FROM start_time) AS hour
+        , EXTRACT(DAY FROM start_time) AS day
+        , EXTRACT(WEEK FROM start_time) AS week
+        , EXTRACT(MONTH FROM start_time)  AS month
+        , EXTRACT(YEAR FROM start_time) AS year
+        , EXTRACT(DOW FROM start_time) AS weekday   
+    FROM timestamp_convert
 """)
 
 # QUERY LISTS
