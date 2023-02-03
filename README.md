@@ -61,7 +61,9 @@ A dimension table for time. It contains the following fields:
 
 # Usage
 **Major files for the project** are `create_tables.py`, `sql_queries.py`, and `etl.py`. 
-**Optional files**: `analysis_queries.py`, `create_cluster.py`
+
+**Optional files**: `analysis_queries.py`, `create_cluster.py`.
+
 ## Prep Work: IAM Role and Redshift Cluster
 This projects assume the following has been done:
 1. An IAM user with S3 Readonly Access has been created
